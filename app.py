@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import os
 import requests
 import numpy as np
+from collections import OrderedDict
 
 # .env 파일 로드
 load_dotenv()
@@ -27,11 +28,9 @@ def search_places(lng, lat, keyword, radius_km):
     url = "https://dapi.kakao.com/v2/local/search/keyword.json"
     headers = {'Authorization': f'KakaoAK {KAKAO_API_KEY}'}
     params = {
-        'query': keyword,
-        'x': lng, 'y': lat,
+        'query': keyword, 'x': lng, 'y': lat,
         'radius': int(radius_km * 1000),
-        'size': 15,
-        'sort': 'accuracy'
+        'size': 15, 'sort': 'accuracy'
     }
     response = requests.get(url, headers=headers, params=params)
     if response.status_code == 200:
@@ -39,18 +38,33 @@ def search_places(lng, lat, keyword, radius_km):
     return []
 
 def process_restaurants(restaurants, bayes_prior, min_reviews):
-    """모든 식당의 베이즈 통계를 계산 (필터링 없이)"""
+    """식당 리스트의 베이즈 통계를 계산 (필터링 없음)"""
     processed_list = []
+    
+    # 이 함수에서 사용할 평점/리뷰 수를 미리 생성
+    # (실제 데이터가 있다면 이 부분을 대체)
+    simulated_data = {}
     for rest in restaurants:
-        # 임시 평점/리뷰 생성 (실제 데이터는 별도 API나 크롤링 필요)
-        avg_rating = np.random.uniform(3.5, 5.0)
-        review_count = np.random.randint(10, 500)
-        ratings = np.random.normal(avg_rating, 0.5, review_count)
+        place_id = rest.get('id')
+        simulated_data[place_id] = {
+            'avg_rating': np.random.uniform(3.5, 5.0),
+            'review_count': np.random.randint(10, 500)
+        }
+
+    for rest in restaurants:
+        place_id = rest.get('id')
+        avg_rating = simulated_data[place_id]['avg_rating']
+        review_count = simulated_data[place_id]['review_count']
         
+        # 베이즈 평균 계산
         bayes_avg = (avg_rating * review_count + bayes_prior * min_reviews) / (review_count + min_reviews)
+        
+        # 분산 계산을 위한 가상 평점 분포 생성
+        ratings = np.random.normal(avg_rating, 0.5, review_count)
         std_dev = np.std(ratings)
 
         processed_list.append({
+            'id': place_id,
             'name': rest.get('place_name'),
             'phone': rest.get('phone') or '정보 없음',
             'lat': float(rest.get('y')),
@@ -65,7 +79,6 @@ def process_restaurants(restaurants, bayes_prior, min_reviews):
 
 @app.route('/')
 def index():
-    # KAKAO_JS_KEY를 .env에서 읽어와 템플릿에 전달
     kakao_js_key = os.getenv('KAKAO_JS_KEY')
     return render_template('index.html', kakao_js_key=kakao_js_key)
 
@@ -75,23 +88,53 @@ def search():
     address = data.get('address')
     radius = float(data.get('radius', 5))
     min_reviews = int(data.get('min_reviews', 50))
-    bayes_prior = float(data.get('bayes_prior', 3.5))
+    fixed_bayes_prior = float(data.get('bayes_prior', 3.5))
     
     lng, lat = get_coordinates(address)
     if not lng:
         return jsonify({'error': '주소 변환에 실패했습니다.'}), 400
 
     keywords = ['한식', '일식', '중식', '양식', '카페']
-    all_results = {}
-
+    categorized_results = {}
+    
+    # 1. 하이브리드 bayes_prior 모델 구현
     for keyword in keywords:
         places = search_places(lng, lat, keyword, radius)
+        
+        # 검색된 식당이 10개 미만이면 고정 prior, 10개 이상이면 동적 prior 사용
+        if len(places) < 10:
+            current_prior = fixed_bayes_prior
+        else:
+            # 동적 prior 계산을 위해 임시 평균 평점 계산 (실제 평점 데이터가 없으므로 시뮬레이션)
+            temp_ratings = [np.random.uniform(3.5, 5.0) for _ in places]
+            current_prior = np.mean(temp_ratings)
+
         if places:
-            processed = process_restaurants(places, bayes_prior, min_reviews)
-            all_results[keyword] = processed
+            processed = process_restaurants(places, current_prior, min_reviews)
+            categorized_results[keyword] = processed
+    
+    # 2. '전체' 카테고리 추가
+    unique_restaurants = {}
+    for category_list in categorized_results.values():
+        for restaurant in category_list:
+            # 식당 ID를 키로 사용하여 중복 제거
+            unique_restaurants[restaurant['id']] = restaurant
+            
+    # 전체 리스트를 베이즈 평균으로 정렬
+    overall_list = sorted(list(unique_restaurants.values()), key=lambda x: x['bayes_avg'], reverse=True)
+
+    # 최종 결과를 순서대로 담기 ('전체'가 맨 앞에 오도록)
+    final_results = OrderedDict()
+    if overall_list:
+        final_results['전체'] = overall_list
+    
+    # 나머지 카테고리 추가
+    for keyword in keywords:
+        if keyword in categorized_results:
+            final_results[keyword] = categorized_results[keyword]
             
     return jsonify({
-        'results': all_results,
+        'results': final_results,
         'center': {'lat': lat, 'lng': lng}
     })
 
