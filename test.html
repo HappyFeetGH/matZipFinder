@@ -1,0 +1,40 @@
+<!-- test.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Kakao Maps API 키 테스트</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        #map { width: 100%; height: 500px; border: 1px solid #ccc; }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Kakao Maps API JavaScript 키 테스트</h1>
+    <p>아래에 회색 배경의 지도가 보이고, 개발자 도구 콘솔에 성공 메시지가 나타나면 키가 정상적으로 작동하는 것입니다.</p>
+    
+    <div id="map"></div>
+
+    <!-- 1. Kakao 지도 SDK 로드: 여기에 여러분의 JavaScript 키를 직접 붙여넣으세요! -->
+    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=273a880b463a5d59b574a9ba6b3dc84a&libraries=services&autoload=false"></script>
+
+    <script>
+        // 2. SDK 로드가 완료된 후 지도 생성
+        try {
+            kakao.maps.load(function() {
+                var mapContainer = document.getElementById('map');
+                var mapOption = {
+                    center: new kakao.maps.LatLng(33.450701, 126.570667), // 기본 위치: 제주 카카오 본사
+                    level: 3 
+                };
+                var map = new kakao.maps.Map(mapContainer, mapOption);
+                console.log('%c카카오 맵 API 로드 및 초기화 성공!', 'color: green; font-weight: bold;');
+            });
+        } catch (e) {
+            console.error('%ckakao 객체를 찾을 수 없습니다. SDK 로드에 실패했습니다.', 'color: red; font-weight: bold;');
+        }
+    </script>
+</body>
+</html>

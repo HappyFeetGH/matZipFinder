@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>맛집 분석 애플리케이션</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; background-color: #f4f4f9; }
+        .container { max-width: 1200px; margin: auto; background: white; padding: 2em; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1, h2 { color: #333; }
+        .form-grid { display: grid; grid-template-columns: 3fr 1fr; gap: 1em; margin-bottom: 1em; }
+        .params-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1em; margin-bottom: 1em; }
+        .param-item { display: flex; flex-direction: column; gap: 0.3em; }
+        .param-item label { font-weight: bold; color: #555; font-size: 0.9em; }
+        input, button { padding: 0.8em; border: 1px solid #ccc; border-radius: 4px; font-size: 1em; }
+        button { background-color: #007bff; color: white; cursor: pointer; border: none; }
+        #map { width: 100%; height: 400px; margin-top: 1em; border: 1px solid #ddd; }
+        .results-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5em; }
+        .category-box { border: 1px solid #eee; border-radius: 8px; padding: 1em; }
+        .category-box h2 { margin-top: 0; }
+        .scrollable-list { max-height: 300px; overflow-y: auto; padding-right: 10px; }
+        ul { list-style: none; padding: 0; }
+        li { border-bottom: 1px solid #f0f0f0; padding: 0.8em 0; }
+        .map-controls { margin-top: 1em; }
+        .map-controls label { margin-right: 1em; }
+        .loader { display: none; text-align: center; margin: 2em; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>맛집 분석기 (Kakao API 기반)</h1>
+
+        <form id="search-form">
+            <div class="form-grid">
+                <input type="text" id="address" placeholder="주소를 입력하세요 (예: 전북특별자치도 전주시 완산구 홍산중앙로 37)" required>
+                <button type="submit">실행</button>
+            </div>
+            <h3>분석 파라미터 설정</h3>
+            <div class="params-grid">
+                <div class="param-item">
+                    <label for="radius">반경 (km)</label>
+                    <input type="number" id="radius" value="3" step="0.5" title="검색할 반경을 킬로미터 단위로 설정">
+                </div>
+                <div class="param-item">
+                    <label for="min_reviews">최소 리뷰 수</label>
+                    <input type="number" id="min_reviews" value="50" title="분석에 포함할 최소 리뷰 개수">
+                </div>
+                <div class="param-item">
+                    <label for="bayes_prior">베이즈 사전값</label>
+                    <input type="number" id="bayes_prior" value="3.5" step="0.1" title="베이즈 통계의 사전 확률값">
+                </div>
+            </div>
+        </form>
+
+        <div class="loader" id="loader">분석 중...</div>
+
+        <div id="map-container" style="display:none;">
+            <div id="map"></div>
+            <div id="map-controls"></div>
+        </div>
+        
+        <div class="results-grid" id="results-container"></div>
+    </div>
+
+    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey={{ kakao_js_key }}&libraries=services&autoload=false"></script>
+    <script>
+        let map;
+        let markers = {};
+
+        document.getElementById('search-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const loader = document.getElementById('loader');
+            const resultsContainer = document.getElementById('results-container');
+            const mapContainer = document.getElementById('map-container');
+            
+            loader.style.display = 'block';
+            resultsContainer.innerHTML = '';
+            mapContainer.style.display = 'none';
+
+            const formData = {
+                address: document.getElementById('address').value,
+                radius: document.getElementById('radius').value,
+                min_reviews: document.getElementById('min_reviews').value,
+                bayes_prior: document.getElementById('bayes_prior').value,
+            };
+
+            try {
+                const response = await fetch('/search', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(formData)
+                });
+
+                loader.style.display = 'none';
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayResults(data.results);
+                    
+                    // Kakao Maps API 로딩 확인 후 지도 초기화
+                    kakao.maps.load(function() {
+                        mapContainer.style.display = 'block';
+                        initializeMap(data.center, data.results, parseFloat(formData.radius));
+                    });
+                } else {
+                    const error = await response.json();
+                    alert('오류: ' + error.error);
+                }
+            } catch (err) {
+                loader.style.display = 'none';
+                alert('네트워크 오류가 발생했습니다: ' + err.message);
+            }
+        });
+
+        function displayResults(results) {
+            const container = document.getElementById('results-container');
+            container.innerHTML = '';
+            for (const category in results) {
+                const categoryBox = document.createElement('div');
+                categoryBox.className = 'category-box';
+                
+                let content = `<h2>${category} (${results[category].length}개)</h2><div class="scrollable-list"><ul>`;
+                results[category].forEach((r, index) => {
+                    content += `<li><strong>${index + 1}. ${r.name}</strong><br>
+                                전화: ${r.phone}<br>
+                                베이즈 평균: ${r.bayes_avg} | 리뷰: ${r.review_count} | 분산: ${r.std_dev}</li>`;
+                });
+                content += '</ul></div>';
+                categoryBox.innerHTML = content;
+                container.appendChild(categoryBox);
+            }
+        }
+
+        function initializeMap(center, resultsData, radiusKm) {
+            const mapContainer = document.getElementById('map');
+            const options = {
+                center: new kakao.maps.LatLng(center.lat, center.lng),
+                level: 5
+            };
+            map = new kakao.maps.Map(mapContainer, options);
+
+            // 반경 원 그리기
+            new kakao.maps.Circle({
+                center: options.center,
+                radius: radiusKm * 1000,
+                strokeWeight: 2,
+                strokeColor: '#007bff',
+                strokeOpacity: 0.8,
+                fillColor: '#007bff',
+                fillOpacity: 0.1
+            }).setMap(map);
+
+            const mapControls = document.getElementById('map-controls');
+            mapControls.innerHTML = '<h3>지도에 표시하기:</h3>';
+            
+            for (const category in resultsData) {
+                markers[category] = [];
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `check-${category}`;
+                checkbox.dataset.category = category;
+                
+                const label = document.createElement('label');
+                label.htmlFor = `check-${category}`;
+                label.textContent = category;
+                
+                mapControls.appendChild(checkbox);
+                mapControls.appendChild(label);
+
+                checkbox.addEventListener('change', (e) => {
+                    const category = e.target.dataset.category;
+                    if (e.target.checked) {
+                        showMarkers(category, resultsData[category]);
+                    } else {
+                        hideMarkers(category);
+                    }
+                });
+            }
+        }
+        
+        function showMarkers(category, places) {
+            hideMarkers(category);
+            places.forEach((place, i) => {
+                const position = new kakao.maps.LatLng(place.lat, place.lng);
+                const marker = new kakao.maps.Marker({
+                    map: map,
+                    position: position,
+                    title: place.name
+                });
+                
+                const content = `<div style="padding:5px;background:white;border:1px solid black;border-radius:4px;">${i+1}. ${place.name}</div>`;
+                const customOverlay = new kakao.maps.CustomOverlay({
+                    position: position,
+                    content: content,
+                    yAnchor: 2.2
+                });
+                marker.overlay = customOverlay;
+                
+                kakao.maps.event.addListener(marker, 'mouseover', function() { customOverlay.setMap(map); });
+                kakao.maps.event.addListener(marker, 'mouseout', function() { customOverlay.setMap(null); });
+                
+                markers[category].push(marker);
+            });
+        }
+
+        function hideMarkers(category) {
+            markers[category].forEach(marker => {
+                if (marker.overlay) marker.overlay.setMap(null);
+                marker.setMap(null);
+            });
+            markers[category] = [];
+        }
+    </script>
+</body>
+</html>

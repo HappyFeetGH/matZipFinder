@@ -1,0 +1,15 @@
+# .gitignore
+
+# 파이썬 가상환경
+venv/
+
+# API 키 및 환경변수 파일
+.env
+
+# 파이썬 캐시 파일
+__pycache__/
+*.pyc
+
+# IDE/에디터 설정 파일
+.vscode/
+.idea/

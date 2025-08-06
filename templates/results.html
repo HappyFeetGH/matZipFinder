@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head><title>검색 결과</title>
+    <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={{ kakao_js_key }}&autoload=false"></script>
+    <style>
+        .category { margin: 20px; border: 1px solid #ccc; padding: 10px; max-height: 400px; overflow-y: scroll; }
+        .category h3 { margin: 0; }
+    </style>
+</head>
+<body>
+    <h1>검색 결과</h1>
+    <div id="map" style="width:100%; height:400px;"></div>
+    <script>
+        kakao.maps.load(function() {
+            var container = document.getElementById('map');
+            var options = { center: new kakao.maps.LatLng({{ center_lat }}, {{ center_lng }}) };
+            var map = new kakao.maps.Map(container, options);
+            var markers = [];
+            var infowindows = [];
+
+            function clearMarkers() {
+                markers.forEach(m => m.setMap(null));
+                infowindows.forEach(i => i.close());
+                markers = [];
+                infowindows = [];
+            }
+
+            document.querySelectorAll('input[type=checkbox]').forEach(function(checkbox) {
+                checkbox.addEventListener('change', function() {
+                    clearMarkers();
+                    var category = this.value;
+                    var places = JSON.parse(this.dataset.places);
+                    places.forEach(function(place, index) {
+                        var marker = new kakao.maps.Marker({
+                            position: new kakao.maps.LatLng(place.lat, place.lng),
+                            map: map
+                        });
+                        var infowindow = new kakao.maps.InfoWindow({
+                            content: `<div>${index+1}위: ${place.name}</div>`
+                        });
+                        infowindow.open(map, marker);
+                        markers.push(marker);
+                        infowindows.push(infowindow);
+                    });
+                });
+            });
+        });
+    </script>
+
+    {% for cat, items in results.items() %}
+        <div class="category">
+            <h3><input type="checkbox" value="{{ cat }}" data-places="{{ items|tojson|safe }}"> {{ cat }} ({{ items|length }}개)</h3>
+            <ul>
+                {% for item in items %}
+                    <li>{{ loop.index }}위: {{ item.name }} | 전화: {{ item.phone }} | 베이즈 평균: {{ item.bayes_avg }} | 리뷰: {{ item.review_count }} | 분산: {{ item.std_dev }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    {% endfor %}
+</body>
+</html>

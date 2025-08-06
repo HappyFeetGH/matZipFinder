@@ -1,0 +1,52 @@
+[
+    {
+        "name": "토방",
+        "category": "음식점",
+        "address": "전북특별자치도 전주시 완산구 평화동1가 727-1",
+        "phone": "063-226-1080",
+        "distance": "191",
+        "bayes_avg": 4.53,
+        "review_count": 187,
+        "std_dev": 0.47
+    },
+    {
+        "name": "상운암 전주식당 평화점",
+        "category": "음식점",
+        "address": "전북특별자치도 전주시 완산구 평화동1가 741-6",
+        "phone": "063-228-8688",
+        "distance": "385",
+        "bayes_avg": 4.53,
+        "review_count": 437,
+        "std_dev": 0.5
+    },
+    {
+        "name": "산마을오리정 평화점",
+        "category": "음식점",
+        "address": "전북특별자치도 전주시 완산구 평화동1가 742-9",
+        "phone": "063-229-5292",
+        "distance": "420",
+        "bayes_avg": 4.28,
+        "review_count": 446,
+        "std_dev": 0.49
+    },
+    {
+        "name": "정원콩나물국밥",
+        "category": "음식점",
+        "address": "전북특별자치도 전주시 완산구 평화동1가 706-9",
+        "phone": "063-227-0696",
+        "distance": "145",
+        "bayes_avg": 4.02,
+        "review_count": 341,
+        "std_dev": 0.48
+    },
+    {
+        "name": "춘천닭갈비비비리 평화점",
+        "category": "음식점",
+        "address": "전북특별자치도 전주시 완산구 평화동1가 734-6",
+        "phone": "063-225-1300",
+        "distance": "112",
+        "bayes_avg": 4.71,
+        "review_count": 411,
+        "std_dev": 0.47
+    }
+]
