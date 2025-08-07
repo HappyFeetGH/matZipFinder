@@ -23,6 +23,20 @@
         .map-controls { margin-top: 1em; }
         .map-controls label { margin-right: 1em; }
         .loader { display: none; text-align: center; margin: 2em; }
+
+        /* 개별 식당 체크박스 스타일링 */
+        li input[type="checkbox"] {
+            margin-right: 8px;
+            transform: scale(1.1);
+            accent-color: #007bff;
+        }
+
+        li > div {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
     </style>
 </head>
 <body>
@@ -64,18 +78,16 @@
     <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey={{ kakao_js_key }}&libraries=services&autoload=false"></script>
     <script>
         let map;
-        let markers = {};
+        let markers = {}; // 카테고리별 마커 (기존 기능)
+        let individualMarkers = {}; // 개별 식당 마커 (새 기능)
 
         document.getElementById('search-form').addEventListener('submit', async function(e) {
             e.preventDefault();
             
             const loader = document.getElementById('loader');
-            const resultsContainer = document.getElementById('results-container');
-            const mapContainer = document.getElementById('map-container');
-            
             loader.style.display = 'block';
-            resultsContainer.innerHTML = '';
-            mapContainer.style.display = 'none';
+            document.getElementById('results-container').innerHTML = '';
+            document.getElementById('map-container').style.display = 'none';
 
             const formData = {
                 address: document.getElementById('address').value,
@@ -91,39 +103,53 @@
                     body: JSON.stringify(formData)
                 });
 
-                loader.style.display = 'none';
-
-                if (response.ok) {
-                    const data = await response.json();
-                    displayResults(data.results);
-                    
-                    // Kakao Maps API 로딩 확인 후 지도 초기화
-                    kakao.maps.load(function() {
-                        mapContainer.style.display = 'block';
-                        initializeMap(data.center, data.results, parseFloat(formData.radius));
-                    });
-                } else {
+                if (!response.ok) {
                     const error = await response.json();
-                    alert('오류: ' + error.error);
+                    throw new Error(error.error || '서버에서 오류가 발생했습니다.');
                 }
+                
+                const data = await response.json();
+                
+                kakao.maps.load(function() {
+                    console.log("Kakao Maps API is successfully loaded.");
+                    loader.style.display = 'none';
+                    document.getElementById('map-container').style.display = 'block';
+                    displayResults(data.results);
+                    initializeMap(data.center, data.results, parseFloat(formData.radius));
+                });
+
             } catch (err) {
                 loader.style.display = 'none';
-                alert('네트워크 오류가 발생했습니다: ' + err.message);
+                alert('오류가 발생했습니다: ' + err.message);
             }
         });
 
         function displayResults(results) {
             const container = document.getElementById('results-container');
             container.innerHTML = '';
+            if (Object.keys(results).length === 0) {
+                container.innerHTML = '<p>검색 결과가 없습니다. 반경을 넓히거나 다른 주소로 시도해보세요.</p>';
+                return;
+            }
             for (const category in results) {
                 const categoryBox = document.createElement('div');
                 categoryBox.className = 'category-box';
-                
                 let content = `<h2>${category} (${results[category].length}개)</h2><div class="scrollable-list"><ul>`;
+                
+                // 각 식당에 체크박스 추가 (핵심 수정 부분)
                 results[category].forEach((r, index) => {
-                    content += `<li><strong>${index + 1}. ${r.name}</strong><br>
+                    const restaurantId = `${category}-${index}`; // 고유 ID 생성
+                    content += `<li>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" id="check-${restaurantId}" 
+                                onchange="toggleIndividualMarker('${restaurantId}', ${r.lat}, ${r.lng}, '${r.name}', this.checked)">
+                            <div>
+                                <strong>${index + 1}. ${r.name}</strong><br>
                                 전화: ${r.phone}<br>
-                                베이즈 평균: ${r.bayes_avg} | 리뷰: ${r.review_count} | 분산: ${r.std_dev}</li>`;
+                                베이즈 평균: ${r.bayes_avg} | 리뷰: ${r.review_count} | 분산: ${r.std_dev}
+                            </div>
+                        </div>
+                    </li>`;
                 });
                 content += '</ul></div>';
                 categoryBox.innerHTML = content;
@@ -139,67 +165,54 @@
             };
             map = new kakao.maps.Map(mapContainer, options);
 
-            // 반경 원 그리기
             new kakao.maps.Circle({
-                center: options.center,
-                radius: radiusKm * 1000,
-                strokeWeight: 2,
-                strokeColor: '#007bff',
-                strokeOpacity: 0.8,
-                fillColor: '#007bff',
-                fillOpacity: 0.1
+                center: options.center, radius: radiusKm * 1000,
+                strokeWeight: 2, strokeColor: '#007bff', strokeOpacity: 0.8,
+                fillColor: '#007bff', fillOpacity: 0.1
             }).setMap(map);
 
             const mapControls = document.getElementById('map-controls');
-            mapControls.innerHTML = '<h3>지도에 표시하기:</h3>';
+            mapControls.innerHTML = '<h3>지도에 표시하기:</h3><p><strong>카테고리별 표시:</strong></p>';
             
+            // 기존 카테고리별 체크박스 (기존 기능 유지)
             for (const category in resultsData) {
                 markers[category] = [];
-
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
                 checkbox.id = `check-${category}`;
                 checkbox.dataset.category = category;
-                
                 const label = document.createElement('label');
                 label.htmlFor = `check-${category}`;
                 label.textContent = category;
-                
                 mapControls.appendChild(checkbox);
                 mapControls.appendChild(label);
-
                 checkbox.addEventListener('change', (e) => {
-                    const category = e.target.dataset.category;
-                    if (e.target.checked) {
-                        showMarkers(category, resultsData[category]);
-                    } else {
-                        hideMarkers(category);
-                    }
+                    const cat = e.target.dataset.category;
+                    if (e.target.checked) showMarkers(cat, resultsData[cat]);
+                    else hideMarkers(cat);
                 });
             }
+
+            // 개별 선택 안내 추가
+            const individualInfo = document.createElement('p');
+            individualInfo.innerHTML = '<strong>개별 식당 선택:</strong> 위의 식당 목록에서 원하는 식당 옆 체크박스를 클릭하세요.';
+            individualInfo.style.marginTop = '15px';
+            individualInfo.style.fontSize = '0.9em';
+            individualInfo.style.color = '#666';
+            mapControls.appendChild(individualInfo);
         }
         
+        // 기존 카테고리별 마커 표시 함수들 (그대로 유지)
         function showMarkers(category, places) {
             hideMarkers(category);
             places.forEach((place, i) => {
                 const position = new kakao.maps.LatLng(place.lat, place.lng);
-                const marker = new kakao.maps.Marker({
-                    map: map,
-                    position: position,
-                    title: place.name
-                });
-                
-                const content = `<div style="padding:5px;background:white;border:1px solid black;border-radius:4px;">${i+1}. ${place.name}</div>`;
-                const customOverlay = new kakao.maps.CustomOverlay({
-                    position: position,
-                    content: content,
-                    yAnchor: 2.2
-                });
+                const marker = new kakao.maps.Marker({ map: map, position: position, title: place.name });
+                const content = `<div style="padding:5px;background:white;border:1px solid black;border-radius:4px;font-size:12px;">${i+1}. ${place.name}</div>`;
+                const customOverlay = new kakao.maps.CustomOverlay({ position: position, content: content, yAnchor: 2.2 });
                 marker.overlay = customOverlay;
-                
-                kakao.maps.event.addListener(marker, 'mouseover', function() { customOverlay.setMap(map); });
-                kakao.maps.event.addListener(marker, 'mouseout', function() { customOverlay.setMap(null); });
-                
+                kakao.maps.event.addListener(marker, 'mouseover', () => customOverlay.setMap(map));
+                kakao.maps.event.addListener(marker, 'mouseout', () => customOverlay.setMap(null));
                 markers[category].push(marker);
             });
         }
@@ -211,6 +224,50 @@
             });
             markers[category] = [];
         }
+
+        // 새로운 개별 식당 마커 관리 함수 (핵심 추가 기능)
+        function toggleIndividualMarker(restaurantId, lat, lng, name, isChecked) {
+            if (isChecked) {
+                // 체크된 경우: 마커 생성 및 표시
+                const position = new kakao.maps.LatLng(lat, lng);
+                const marker = new kakao.maps.Marker({ 
+                    map: map, 
+                    position: position, 
+                    title: name 
+                });
+                
+                // 개별 선택된 식당은 다른 스타일의 오버레이 사용
+                const content = `<div style="padding:5px;background:#ff6b6b;color:white;border:1px solid #ff4757;border-radius:4px;font-size:12px;font-weight:bold;">📍 ${name}</div>`;
+                const customOverlay = new kakao.maps.CustomOverlay({ 
+                    position: position, 
+                    content: content, 
+                    yAnchor: 2.2 
+                });
+                
+                marker.overlay = customOverlay;
+                
+                // 마우스 이벤트: 개별 선택된 마커는 항상 표시
+                kakao.maps.event.addListener(marker, 'mouseover', () => customOverlay.setMap(map));
+                kakao.maps.event.addListener(marker, 'mouseout', () => customOverlay.setMap(null));
+                
+                // 개별 마커 저장
+                individualMarkers[restaurantId] = marker;
+                
+                // 오버레이를 즉시 표시 (개별 선택된 것임을 강조)
+                customOverlay.setMap(map);
+                
+            } else {
+                // 체크 해제된 경우: 마커 제거
+                if (individualMarkers[restaurantId]) {
+                    if (individualMarkers[restaurantId].overlay) {
+                        individualMarkers[restaurantId].overlay.setMap(null);
+                    }
+                    individualMarkers[restaurantId].setMap(null);
+                    delete individualMarkers[restaurantId];
+                }
+            }
+        }
     </script>
+
 </body>
 </html>
